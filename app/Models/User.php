@@ -28,6 +28,7 @@ class User extends Authenticatable
         'role',
         'status',
         'profile_level',
+        'organisation_id',
         'marketeur_code',
         'otp_code',
         'otp_expires_at',
@@ -72,6 +73,11 @@ class User extends Authenticatable
     public function sensibilisateur(): HasOne
     {
         return $this->hasOne(Sensibilisateur::class);
+    }
+
+    public function organisation(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Organisation::class);
     }
 
     public function auditLogs(): HasMany

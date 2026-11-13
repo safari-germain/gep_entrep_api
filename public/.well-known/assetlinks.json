@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.equato.equatoshop",
+      "sha256_cert_fingerprints": [
+        "79:9F:08:46:EF:F8:F2:6D:61:2E:AB:E8:C3:47:2C:8A:EC:D7:07:62:B4:59:D1:90:E0:52:24:2C:0D:5A:81:A7"
+      ]
+    }
+  }
+]

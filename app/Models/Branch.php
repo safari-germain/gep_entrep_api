@@ -38,6 +38,11 @@ class Branch extends Model
         return $this->hasMany(Individual::class);
     }
 
+    public function organisations(): HasMany
+    {
+        return $this->hasMany(Organisation::class);
+    }
+
     public function deposits(): HasMany
     {
         return $this->hasMany(Deposit::class);

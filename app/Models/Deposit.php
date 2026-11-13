@@ -12,8 +12,11 @@ class Deposit extends Model
 
     protected $fillable = [
         'deposit_reference',
+        'entity_type',
         'user_id',
         'branch_id',
+        'target_branch_id',
+        'organisation_id',
         'operator_id',
         'expected_amount',
         'actual_amount',
@@ -21,6 +24,7 @@ class Deposit extends Model
         'actual_date',
         'delay_days',
         'wallet_destination',
+        'cycle_id',
         'payment_method',
         'payment_reference',
         'is_on_time',
@@ -46,8 +50,19 @@ class Deposit extends Model
         return $this->belongsTo(Branch::class);
     }
 
+    public function targetBranch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class, 'target_branch_id');
+    }
+
+    public function organisation(): BelongsTo
+    {
+        return $this->belongsTo(Organisation::class);
+    }
+
     public function operator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'operator_id');
     }
 }
+
