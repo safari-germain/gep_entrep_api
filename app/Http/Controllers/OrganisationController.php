@@ -57,7 +57,7 @@ class OrganisationController extends Controller
             if (!empty($memberUserIds)) {
                 $q->orWhereIn('user_id', $memberUserIds);
             }
-        })->where('status', 'active')->sum('amount');
+        })->where('is_active', true)->sum('penalty_amount');
 
         $creditsEncours = (float) \App\Models\Credit::where(function ($q) use ($org, $memberUserIds) {
             $q->where('target_organisation_id', $org->id);
@@ -97,7 +97,8 @@ class OrganisationController extends Controller
         ]);
 
         $org = Organisation::create(array_merge($validated, ['is_active' => true, 'status' => 'active']));
-        return response()->json($org, 201);
+        $org->load('branch');
+        return response()->json($this->enrichPortfolio($org), 201);
     }
 
     public function addMember(Request $request, int $id): JsonResponse

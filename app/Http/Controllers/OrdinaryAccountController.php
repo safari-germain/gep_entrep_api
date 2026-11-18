@@ -202,9 +202,12 @@ class OrdinaryAccountController extends Controller
     /**
      * Compte d'une entité spécifique (pour admin)
      */
-    public function showByEntity(string $type, int $entityId)
+    public function showByEntity(string $type, $entityId)
     {
-        $account = OrdinaryAccount::getOrCreateForEntity($type, $entityId);
+        if (!is_numeric($entityId)) {
+            return response()->json(['error' => 'ID d\'entité invalide.'], 400);
+        }
+        $account = OrdinaryAccount::getOrCreateForEntity($type, (int) $entityId);
         $account->load(['transactions' => function ($q) {
             $q->orderBy('created_at', 'desc')->limit(50);
         }]);

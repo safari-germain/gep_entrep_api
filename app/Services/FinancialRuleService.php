@@ -45,6 +45,9 @@ class FinancialRuleService
             'credit_express_penalty_pct'                   => 2.0,  // Pénalité de retard journalière/échéance (%) crédit express
             'credit_special_grace_days'                    => 5,    // Jours de grâce pour crédit spécial
             'credit_special_penalty_pct'                   => 1.5,  // Pénalité de retard journalière/échéance (%) crédit spécial
+            'compte_ordinaire_annual_bonus_pct'            => 5.0,  // Bonus annuel (%) sur solde positif ordinaire, calculé par jour (/ 365)
+            'overdraft_notification_frequency'             => 'les_deux', // Fréquence notifications découvert: 'matin', 'soir', 'les_deux'
+            'credit_solidaire_default_sponsors'            => '[]', // Organisations parraines par défaut pour crédit solidaire (JSON)
         ];
 
         return FinancialRule::getRuleValue($key, $defaults[$key] ?? $default);

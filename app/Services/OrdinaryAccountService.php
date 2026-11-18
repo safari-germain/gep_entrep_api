@@ -482,4 +482,116 @@ class OrdinaryAccountService
             'processed' => $processed,
         ];
     }
+
+    /**
+     * Calcul et distribution quotidienne du bonus annuel sur solde ordinaire positif.
+     * Taux annuel configurable divisé par 365 jours de l'année.
+     */
+    public function applyDailyPositiveBalanceBonus(): array
+    {
+        $annualRatePct = (float) FinancialRuleService::get('compte_ordinaire_annual_bonus_pct', 5.0);
+        if ($annualRatePct <= 0) {
+            return ['status' => false, 'message' => 'Taux annuel de bonus inactif', 'count' => 0];
+        }
+
+        $dailyRate = ($annualRatePct / 100.0) / 365.0;
+        $positiveAccounts = OrdinaryAccount::where('balance', '>', 0)->get();
+        $processed = [];
+
+        foreach ($positiveAccounts as $account) {
+            $userId = $account->user_id;
+            if (!$userId) continue;
+
+            $balance = (float) $account->balance;
+            $dailyBonus = round($balance * $dailyRate, 4);
+
+            if ($dailyBonus < 0.0001) continue;
+
+            // Enregistrer dans la table bonuses
+            $bonus = \App\Models\Bonus::create([
+                'user_id'                => $userId,
+                'branch_id'              => $account->entity_type === 'branch' ? $account->entity_id : 1,
+                'bonus_type'              => 'ordinary_account_daily_bonus',
+                'amount'                 => $dailyBonus,
+                'held_for_annual_payout' => true,
+                'description'            => "Bonus quotidien compte ordinaire ({$annualRatePct}%/an soit " . number_format($dailyRate * 100, 4) . "%/jour sur solde de {$balance} $)",
+            ]);
+
+            // Accumuler dans le compte de bonus annuel
+            if (\Illuminate\Support\Facades\Schema::hasTable('annual_bonus_accounts')) {
+                $annualAccount = \App\Models\AnnualBonusAccount::firstOrCreate(
+                    ['user_id' => $userId, 'fiscal_year' => now()->year],
+                    ['total_bonuses_accumulated' => 0, 'total_maluses_deducted' => 0, 'net_bonus_balance' => 0, 'status' => 'pending']
+                );
+                $annualAccount->increment('total_bonuses_accumulated', $dailyBonus);
+                $annualAccount->increment('net_bonus_balance', $dailyBonus);
+            }
+
+            $processed[] = [
+                'user_id'     => $userId,
+                'balance'     => $balance,
+                'daily_bonus' => $dailyBonus,
+            ];
+        }
+
+        return [
+            'status'              => true,
+            'annual_rate_pct'     => $annualRatePct,
+            'daily_rate_pct'      => round($dailyRate * 100, 5),
+            'count'               => count($processed),
+            'total_bonus_awarded' => round(collect($processed)->sum('daily_bonus'), 4),
+            'processed'           => $processed,
+        ];
+    }
+
+    /**
+     * Envoi de notifications sur les comptes ordinaires en découvert (négatifs)
+     * Selon la fréquence choisie par l'administrateur : 'matin', 'soir', 'les_deux'
+     */
+    public function sendOverdraftNotifications(string $currentTiming = 'matin'): array
+    {
+        $freqSetting = FinancialRuleService::get('overdraft_notification_frequency', 'les_deux');
+        $frequency = is_array($freqSetting) ? ($freqSetting['frequency'] ?? 'les_deux') : $freqSetting;
+
+        if ($frequency !== 'les_deux' && $frequency !== $currentTiming) {
+            return [
+                'status'  => false,
+                'message' => "Fréquence configurée sur '{$frequency}', notification ignorée pour '{$currentTiming}'",
+                'notified'=> 0,
+            ];
+        }
+
+        $negativeAccounts = OrdinaryAccount::where('balance', '<', 0)->with('user')->get();
+        $notified = [];
+
+        foreach ($negativeAccounts as $acc) {
+            $user = $acc->user;
+            if (!$user) continue;
+
+            $negativeBalance = abs((float) $acc->balance);
+            $consecutiveMonths = $acc->consecutive_negative_months ?? 0;
+
+            // Enregistrer la notification dans l'audit log
+            \App\Models\AuditLog::create([
+                'action'             => 'overdraft_alert_notification',
+                'operator_user_id'   => $user->id,
+                'details'            => "Alerte Découvert [{$currentTiming}] : Solde ordinaire négatif de -{$negativeBalance} $ (en découvert depuis {$consecutiveMonths} mois). Des intérêts débiteurs s'appliquent après le délai de grâce.",
+                'ip_address'         => '127.0.0.1',
+                'created_at'         => now(),
+            ]);
+
+            $notified[] = [
+                'user_id' => $user->id,
+                'name'    => $user->name,
+                'balance' => $acc->balance,
+            ];
+        }
+
+        return [
+            'status'   => true,
+            'timing'   => $currentTiming,
+            'notified' => count($notified),
+            'accounts' => $notified,
+        ];
+    }
 }

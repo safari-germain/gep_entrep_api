@@ -35,9 +35,8 @@ class OhadaAccountingService
             ->sum('remaining_balance');
 
         // Dépôts de caution (garanties reçues = actif trésorerie)
-        $depositsCaution = Deposit::where('type', 'caution')
-            ->where('status', 'active')
-            ->sum('amount');
+        $depositsCaution = (float) Deposit::where('wallet_destination', 'caution')
+            ->sum('actual_amount');
 
         // Comptes ordinaires agrégés (soldes positifs = trésorerie)
         $tresorerieCompteOrdinaire = OrdinaryAccount::where('balance', '>', 0)->sum('balance');
@@ -117,10 +116,9 @@ class OhadaAccountingService
         // Comptes ordinaires en négatif (passif — obligation de remboursement théorique)
         $comptesNegatifs = abs(OrdinaryAccount::where('balance', '<', 0)->sum('balance'));
 
-        // Cotisations collectées non encore affectées (dépôts en attente de cycle)
-        $cotisationsCollectees = Deposit::where('status', 'pending')
-            ->whereIn('type', ['caution', 'cotisation'])
-            ->sum('amount');
+        // Cotisations collectées (dépôts associés aux cycles solidaires)
+        $cotisationsCollectees = (float) Deposit::whereNotNull('cycle_id')
+            ->sum('actual_amount');
 
         $passifCapitaux = [
             'label' => 'CAPITAUX PROPRES & ASSIMILÉS',
@@ -230,9 +228,8 @@ class OhadaAccountingService
             ->sum('amount');
 
         // Bonus versés aux membres (641)
-        $bonusVerses = DB::table('bonuses')
-            ->where('status', 'paid')
-            ->whereBetween('paid_at', [$startDate, $endDate])
+        $bonusVerses = (float) DB::table('bonuses')
+            ->whereBetween('created_at', [$startDate, $endDate])
             ->sum('amount');
 
         // Provisions pour créances douteuses (691)
@@ -276,12 +273,12 @@ class OhadaAccountingService
      */
     private function sumAccountClass(string $class, Carbon $from, Carbon $to, string $direction): float
     {
-        $col = $direction === 'debit' ? 'debit_amount' : 'credit_amount';
         return (float) DB::table('accounting_entry_lines')
             ->join('ohada_accounts', 'accounting_entry_lines.ohada_account_id', '=', 'ohada_accounts.id')
             ->where('ohada_accounts.account_number', 'like', $class . '%')
+            ->where('accounting_entry_lines.direction', $direction)
             ->whereBetween('accounting_entry_lines.created_at', [$from, $to])
-            ->sum("accounting_entry_lines.{$col}");
+            ->sum('accounting_entry_lines.amount');
     }
 
     /**
@@ -289,12 +286,12 @@ class OhadaAccountingService
      */
     private function sumAccount(string $accountPrefix, Carbon $from, Carbon $to, string $direction): float
     {
-        $col = $direction === 'debit' ? 'debit_amount' : 'credit_amount';
         return (float) DB::table('accounting_entry_lines')
             ->join('ohada_accounts', 'accounting_entry_lines.ohada_account_id', '=', 'ohada_accounts.id')
             ->where('ohada_accounts.account_number', 'like', $accountPrefix . '%')
+            ->where('accounting_entry_lines.direction', $direction)
             ->whereBetween('accounting_entry_lines.created_at', [$from, $to])
-            ->sum("accounting_entry_lines.{$col}");
+            ->sum('accounting_entry_lines.amount');
     }
 
     /**

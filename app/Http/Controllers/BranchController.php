@@ -40,7 +40,7 @@ class BranchController extends Controller
     {
         $caution = (float) \App\Models\Deposit::where('branch_id', $branch->id)->sum('actual_amount');
         $bonus = (float) \App\Models\Bonus::where('branch_id', $branch->id)->sum('amount');
-        $malus = (float) \App\Models\Malus::where('branch_id', $branch->id)->where('status', 'active')->sum('amount');
+        $malus = (float) \App\Models\Malus::where('branch_id', $branch->id)->where('is_active', true)->sum('penalty_amount');
         $creditsEncours = (float) \App\Models\Credit::where(function ($q) use ($branch) {
             $q->where('branch_id', $branch->id)
               ->orWhere('target_branch_id', $branch->id);
@@ -77,6 +77,6 @@ class BranchController extends Controller
         ]);
 
         $branch = Branch::create(array_merge($validated, ['is_active' => true]));
-        return response()->json($branch, 201);
+        return response()->json($this->enrichBranchPortfolio($branch), 201);
     }
 }

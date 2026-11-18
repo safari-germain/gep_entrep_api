@@ -27,6 +27,7 @@ class SystemLedgerEntry extends Model
         'validated_at',
         'cycle_id',
         'branch_id',
+        'ohada_account_id',
         'rejection_reason',
     ];
 
@@ -55,5 +56,10 @@ class SystemLedgerEntry extends Model
     public function branch()
     {
         return $this->belongsTo(Branch::class, 'branch_id');
+    }
+
+    public function ohadaAccount()
+    {
+        return $this->belongsTo(OhadaAccount::class, 'ohada_account_id');
     }
 }

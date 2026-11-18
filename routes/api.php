@@ -60,6 +60,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/sensibilisateurs/options', [SensibilisateurController::class, 'options']); // Mobile: selection du sensibilisateur
     Route::post('/sensibilisateurs/select', [SensibilisateurController::class, 'selectSensibilisateur']); // Mobile: choisir son sensibilisateur
     Route::post('/sensibilisateurs/{id}/release-year-end', [SensibilisateurController::class, 'releaseYearEnd']); // Cloture annuelle
+    Route::post('/sensibilisateurs/assign-marketer', [SensibilisateurController::class, 'assignMarketer']); // Admin: nommer animateur
+    Route::get('/sensibilisateurs/marketer-space', [SensibilisateurController::class, 'marketerSpace']); // Mobile: espace animateur / marketeur
 
     // ---- MEMBRES / INDIVIDUALS ----
     Route::get('/individuals', [IndividualController::class, 'index']);
@@ -134,6 +136,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/system-ledger/entries/{id}/validate', [SystemLedgerController::class, 'validateEntry']);
     Route::post('/system-ledger/entries/{id}/reject', [SystemLedgerController::class, 'rejectEntry']);
     Route::get('/system-ledger/title-suggestions', [SystemLedgerController::class, 'titleSuggestions']);
+    Route::get('/system-ledger/ohada-accounts', [SystemLedgerController::class, 'ohadaAccounts']);
 
     // ---- CAISSE & REÇUS (CASH RECEIPTS) ----
     Route::get('/cash-receipts', [CashReceiptController::class, 'index']);
@@ -143,8 +146,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     // ---- COMPTE ORDINAIRE (PICKUP / TOUTES TRANSACTIONS) ----
     Route::get('/ordinary-accounts', [OrdinaryAccountController::class, 'index']);
     Route::get('/ordinary-accounts/me', [OrdinaryAccountController::class, 'me']);
-    Route::get('/ordinary-accounts/{type}/{entityId}', [OrdinaryAccountController::class, 'showByEntity']);
-    Route::get('/ordinary-accounts/{accountId}/transactions', [OrdinaryAccountController::class, 'transactions']);
+    Route::get('/ordinary-accounts/{accountId}/transactions', [OrdinaryAccountController::class, 'transactions'])->whereNumber('accountId');
+    Route::get('/ordinary-accounts/{type}/{entityId}', [OrdinaryAccountController::class, 'showByEntity'])->whereNumber('entityId');
     Route::post('/ordinary-accounts/deposit', [OrdinaryAccountController::class, 'deposit']);
     Route::post('/ordinary-accounts/withdraw', [OrdinaryAccountController::class, 'withdraw']);
     Route::post('/ordinary-accounts/{id}/toggle-block', [OrdinaryAccountController::class, 'toggleBlock']);

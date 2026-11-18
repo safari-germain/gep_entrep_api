@@ -251,6 +251,27 @@ class FinancialRuleSeeder extends Seeder
                 'value_numeric' => 1.5,
                 'type' => 'percentage',
             ],
+            [
+                'key' => 'compte_ordinaire_annual_bonus_pct',
+                'name' => 'Bonus Annuel Compte Ordinaire Positif (% / 365j)',
+                'description' => 'Taux annuel de rémunération des soldes ordinaires positifs, calculé et crédité chaque jour (divisé par 365 jours)',
+                'value_numeric' => 5.0,
+                'type' => 'percentage',
+            ],
+            [
+                'key' => 'overdraft_notification_frequency',
+                'name' => 'Fréquence Notifications Découvert Compte Ordinaire',
+                'description' => 'Fréquence d\'envoi automatique des alertes découvert aux comptes négatifs (matin, soir, les_deux)',
+                'value_numeric' => 0,
+                'type' => 'json',
+            ],
+            [
+                'key' => 'credit_solidaire_default_sponsors',
+                'name' => 'Organisations Parraines par Défaut (Crédit Solidaire)',
+                'description' => 'Liste JSON des organisations parraines obligatoires/par défaut avec leur pourcentage pour crédit solidaire',
+                'value_numeric' => 0,
+                'type' => 'json',
+            ],
         ];
 
         foreach ($rules as $r) {

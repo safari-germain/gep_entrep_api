@@ -279,36 +279,43 @@ class CycleController extends Controller
         $cycle->load(['branch:id,name', 'openedBy:id,name', 'ordinaryAccount']);
 
         // ──────────────────────────────────────────────────────────────────────
-        // PRÉLÈVEMENT AUTOMATIQUE IMMÉDIAT : si la date d'auto-dépôt du mois
-        // en cours est DÉJÀ PASSÉE, on prélève immédiatement la cotisation du
-        // mois depuis le compte ordinaire pour ne pas sauter ce mois.
-        // Ex : cycle créé le 28/10, auto_deposit_day=25 → le 25 oct est passé
-        //      → on prélève immédiatement la cotisation d'octobre.
+        // PRÉLÈVEMENT AUTOMATIQUE IMMÉDIAT & RÉTROACTIF :
+        // Si la date d'ouverture du cycle est antérieure à aujourd'hui et que
+        // le jour d'auto-dépôt de plusieurs mois est déjà passé, on prélève
+        // automatiquement TOUTES les cotisations des mois échus depuis le compte ordinaire.
         // ──────────────────────────────────────────────────────────────────────
         $immediateDeposit = null;
         $immediateWarning = null;
 
         $today = Carbon::now()->startOfDay();
+        $startDateObj = Carbon::parse($cycle->start_date)->startOfDay();
 
-        // Date du jour d'auto-dépôt pour le mois de démarrage du cycle
-        $cycleStartMonth = Carbon::parse($cycle->start_date)->startOfMonth();
-        $depositDayThisMonth = Carbon::create(
-            $cycleStartMonth->year,
-            $cycleStartMonth->month,
-            min($autoDepositDay, $cycleStartMonth->daysInMonth)
-        )->startOfDay();
+        // Trouver toutes les échéances mensuelles de prélèvement déjà échues
+        $pastDueDates = [];
+        $currMonth = Carbon::create($startDateObj->year, $startDateObj->month, 1)->startOfDay();
 
-        // Condition : le jour d'auto-dépôt du mois de démarrage est déjà passé
-        //             ET le cycle vient juste d'être ouvert (start_date <= aujourd'hui)
-        $cycleAlreadyStarted = Carbon::parse($cycle->start_date)->lessThanOrEqualTo($today);
+        while ($currMonth->lessThanOrEqualTo($today)) {
+            $depositDateForMonth = Carbon::create(
+                $currMonth->year,
+                $currMonth->month,
+                min($autoDepositDay, $currMonth->daysInMonth)
+            )->startOfDay();
 
-        if ($cycleAlreadyStarted && $depositDayThisMonth->lessThan($today)) {
+            if ($depositDateForMonth->lessThanOrEqualTo($today)) {
+                $pastDueDates[] = $depositDateForMonth;
+            }
+            $currMonth->addMonth();
+        }
+
+        if (!empty($pastDueDates)) {
             $account->refresh();
+            $monthsCount = count($pastDueDates);
+            $totalDebitAmount = round($monthsCount * $monthlyAmount, 2);
 
             DB::beginTransaction();
             try {
                 $balanceBefore = (float) $account->balance;
-                $balanceAfter  = round($balanceBefore - $monthlyAmount, 2);
+                $balanceAfter  = round($balanceBefore - $totalDebitAmount, 2);
 
                 // Débiter le compte ordinaire (autorise solde négatif avec marquage negative_since)
                 $account->balance = $balanceAfter;
@@ -317,75 +324,89 @@ class CycleController extends Controller
                 }
                 $account->save();
 
-                // Enregistrer la transaction sur le compte ordinaire
-                OrdinaryAccountTransaction::create([
-                    'ordinary_account_id' => $account->id,
-                    'transaction_type'    => 'cotisation_solidaire',
-                    'direction'           => 'debit',
-                    'amount'              => $monthlyAmount,
-                    'balance_before'      => $balanceBefore,
-                    'balance_after'       => $balanceAfter,
-                    'description'         => "Cotisation solidaire automatique — {$cycle->name} — Mois 1 (jour {$autoDepositDay} déjà passé)",
-                    'reference'           => 'COT-' . strtoupper(Str::random(8)),
-                    'payment_method'      => 'auto_debit',
-                    'operator_id'         => $request->user()->id,
-                ]);
+                $runningBal = $balanceBefore;
+                $createdDeposits = [];
 
-                // Créer le dépôt (cotisation solidaire) associé au cycle
-                $depositRef = 'DEP-' . strtoupper(Str::random(10));
-                $deposit = Deposit::create([
-                    'deposit_reference'  => $depositRef,
-                    'user_id'            => $userId,
-                    'branch_id'          => $branchId,
-                    'operator_id'        => $request->user()->id,
-                    'cycle_id'           => $cycle->id,
-                    'entity_type'        => $entityType,
-                    'actual_amount'      => $monthlyAmount,
-                    'expected_amount'    => $monthlyAmount,
-                    'actual_date'        => $depositDayThisMonth->toDateString(),
-                    'expected_date'      => $depositDayThisMonth->toDateString(),
-                    'payment_method'     => 'auto_debit',
-                    'payment_reference'  => $depositRef,
-                    'wallet_destination' => 'caution',
-                    'is_on_time'         => true,
-                    'delay_days'         => 0,
-                    'remarks'            => "Prélèvement automatique à l'ouverture du cycle (jour {$autoDepositDay} déjà passé ce mois).",
-                ]);
+                foreach ($pastDueDates as $idx => $dueDt) {
+                    $nextBal = round($runningBal - $monthlyAmount, 2);
+                    $monthNum = $idx + 1;
 
-                // Mettre à jour total_deposited du cycle + next auto deposit date
-                $nextAutoDepositDate = Carbon::create(
-                    $cycleStartMonth->year,
-                    $cycleStartMonth->month,
-                    min($autoDepositDay, $cycleStartMonth->daysInMonth)
-                )->addMonth();
+                    // Enregistrer la transaction sur le compte ordinaire
+                    OrdinaryAccountTransaction::create([
+                        'ordinary_account_id' => $account->id,
+                        'transaction_type'    => 'cotisation_solidaire',
+                        'direction'           => 'debit',
+                        'amount'              => $monthlyAmount,
+                        'balance_before'      => $runningBal,
+                        'balance_after'       => $nextBal,
+                        'description'         => "Cotisation solidaire rétroactive — {$cycle->name} — Échéance {$dueDt->format('d/m/Y')}",
+                        'reference'           => 'COT-' . strtoupper(Str::random(8)),
+                        'payment_method'      => 'auto_debit',
+                        'operator_id'         => $request->user()->id,
+                    ]);
+
+                    // Créer le dépôt (cotisation solidaire) associé au cycle
+                    $depositRef = 'DEP-' . strtoupper(Str::random(10));
+                    $deposit = Deposit::create([
+                        'deposit_reference'  => $depositRef,
+                        'user_id'            => $userId,
+                        'branch_id'          => $branchId,
+                        'operator_id'        => $request->user()->id,
+                        'cycle_id'           => $cycle->id,
+                        'entity_type'        => $entityType,
+                        'actual_amount'      => $monthlyAmount,
+                        'expected_amount'    => $monthlyAmount,
+                        'actual_date'        => $dueDt->toDateString(),
+                        'expected_date'      => $dueDt->toDateString(),
+                        'payment_method'     => 'auto_debit',
+                        'payment_reference'  => $depositRef,
+                        'wallet_destination' => 'caution',
+                        'is_on_time'         => true,
+                        'delay_days'         => 0,
+                        'remarks'            => "Prélèvement automatique rétroactif à l'ouverture du cycle ({$monthNum}/{$monthsCount} - échéance {$dueDt->format('d/m/Y')}).",
+                    ]);
+
+                    $createdDeposits[] = $deposit;
+                    $runningBal = $nextBal;
+                }
+
+                // Prochaine date d'auto-dépôt (la prochaine échéance non échue)
+                $nextUpcomingDate = Carbon::create(
+                    $currMonth->year,
+                    $currMonth->month,
+                    min($autoDepositDay, $currMonth->daysInMonth)
+                )->startOfDay();
+
+                if ($nextUpcomingDate->lessThanOrEqualTo($today)) {
+                    $nextUpcomingDate = $nextUpcomingDate->addMonth();
+                }
 
                 $cycle->update([
-                    'total_deposited'        => $monthlyAmount,
-                    'auto_deposit_next_date'  => $nextAutoDepositDate->toDateString(),
+                    'total_deposited'        => $totalDebitAmount,
+                    'auto_deposit_next_date' => $nextUpcomingDate->toDateString(),
                 ]);
 
                 DB::commit();
 
                 $isOverdrawn = $balanceAfter < 0;
-                $msg = "La cotisation du mois en cours (jour {$autoDepositDay}) était déjà passée — prélèvement immédiat de {$monthlyAmount} \$ effectué depuis le compte ordinaire.";
+                $msg = "{$monthsCount} mois d'échéances passées ont été prélevés rétroactivement ({$totalDebitAmount} \$) depuis le compte ordinaire.";
                 if ($isOverdrawn) {
-                    $msg .= " Le solde est désormais négatif ({$balanceAfter} \$). Des intérêts débiteurs s'appliqueront après le délai de grâce.";
+                    $msg .= " Le solde du compte ordinaire est négatif ({$balanceAfter} \$). Des intérêts débiteurs s'appliqueront après le délai de grâce.";
                 }
 
                 $immediateDeposit = [
-                    'deposit_id'     => $deposit->id,
-                    'reference'      => $depositRef,
-                    'amount'         => $monthlyAmount,
+                    'months_count'   => $monthsCount,
+                    'amount'         => $totalDebitAmount,
+                    'monthly_amount' => $monthlyAmount,
                     'deducted_from'  => 'compte_ordinaire',
                     'balance_before' => $balanceBefore,
                     'balance_after'  => $balanceAfter,
                     'is_overdrawn'   => $isOverdrawn,
-                    'date'           => $depositDayThisMonth->toDateString(),
                     'message'        => $msg,
                 ];
             } catch (\Throwable $e) {
                 DB::rollBack();
-                $immediateWarning = "Cycle créé, mais le prélèvement automatique immédiat a échoué : " . $e->getMessage();
+                $immediateWarning = "Cycle créé, mais le prélèvement automatique rétroactif a échoué : " . $e->getMessage();
             }
         }
 

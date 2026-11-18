@@ -152,7 +152,7 @@ class MobileDashboardController extends Controller
                     'id' => $user->id,
                     'name' => $user->name,
                     'role' => $user->role ?? 'individual',
-                    'member_code' => $individual?->member_code ?? ('MEM-' . $user->id),
+                    'member_code' => $user->member_code ?? ($individual?->member_code ?? ('MEM-' . str_pad($user->id, 5, '0', STR_PAD_LEFT))),
                     'branch_id' => $individual?->branch_id ?? 1,
                     'organisation_id' => $individual?->organisation_id ?? $user->organisation_id,
                     'organisation' => $individual?->organisation ? [

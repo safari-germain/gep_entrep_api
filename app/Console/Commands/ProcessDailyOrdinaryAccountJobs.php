@@ -128,9 +128,44 @@ class ProcessDailyOrdinaryAccountJobs extends Command
             Log::error('[compte-ordinaire:process-daily] Erreur prélèvement caution: ' . $e->getMessage());
         }
 
+        // ── 4. Bonus quotidien sur compte ordinaire positif (proratisé sur 365 jours) ──
+        $this->info('');
+        $this->info('▶ [4/5] Attribution du bonus quotidien sur soldes positifs (prorata 365 jours)...');
+
+        if (!$dryRun) {
+            try {
+                $bonusRes = $service->applyDailyPositiveBalanceBonus();
+                if ($bonusRes['status']) {
+                    $this->info("  ✅ {$bonusRes['count']} compte(s) rémunéré(s) (taux annuel: {$bonusRes['annual_rate_pct']}%, taux/jour: {$bonusRes['daily_rate_pct']}%, total: {$bonusRes['total_bonus_awarded']}$)");
+                } else {
+                    $this->line("  ℹ️  {$bonusRes['message']}");
+                }
+            } catch (\Throwable $e) {
+                $this->error("  ❌ Erreur bonus quotidien: " . $e->getMessage());
+                Log::error('[compte-ordinaire:process-daily] Erreur bonus: ' . $e->getMessage());
+            }
+        } else {
+            $this->warn('  [DRY-RUN] Bonus ignoré.');
+        }
+
+        // ── 5. Notifications sur comptes ordinaires négatifs (Matin / Soir) ──
+        $this->info('');
+        $this->info('▶ [5/5] Notifications alertes découvert sur comptes ordinaires négatifs...');
+
+        if (!$dryRun) {
+            try {
+                $currentTiming = now()->hour < 14 ? 'matin' : 'soir';
+                $notifRes = $service->sendOverdraftNotifications($currentTiming);
+                $this->info("  🔔 {$notifRes['notified']} notification(s) envoyée(s) [créneau: {$currentTiming}].");
+            } catch (\Throwable $e) {
+                $this->error("  ❌ Erreur notifications découvert: " . $e->getMessage());
+                Log::error('[compte-ordinaire:process-daily] Erreur notifications: ' . $e->getMessage());
+            }
+        }
+
         $this->info('');
         $this->info('========================================');
-        $this->info('  Traitement terminé.');
+        $this->info('  Traitement terminé avec succès.');
         $this->info('========================================');
 
         return Command::SUCCESS;

@@ -111,20 +111,47 @@ class CreditWorkflowService
                 'has_red_dot'             => false,
             ]);
 
-            // Pour Crédit Solidaire : pré-positionner automatiquement l'organisation par défaut
+            // Pour Crédit Solidaire : pré-positionner automatiquement la ou les organisations par défaut avec leur pourcentage
             if ($creditType === 'solidaire') {
-                $orgDefaultPct = (float) FinancialRuleService::get('credit_solidaire_org_default_pct', 50.0);
-                $defaultOrg = Organisation::where('status', 'active')->first();
-                if ($defaultOrg) {
-                    CreditGuarantor::create([
-                        'credit_id'             => $credit->id,
-                        'organisation_id'       => $defaultOrg->id,
-                        'guarantor_type'        => 'organisation',
-                        'guarantor_role'        => 'org_default',
-                        'guaranteed_percentage' => $orgDefaultPct,
-                        'guaranteed_amount'     => round($amount * ($orgDefaultPct / 100.0), 2),
-                        'approval_status'       => 'pending',
-                    ]);
+                $defaultSponsorsJson = FinancialRuleService::get('credit_solidaire_default_sponsors', '[]');
+                $defaultSponsors = is_array($defaultSponsorsJson)
+                    ? $defaultSponsorsJson
+                    : json_decode($defaultSponsorsJson ?: '[]', true);
+
+                $attachedDefault = false;
+                if (!empty($defaultSponsors) && is_array($defaultSponsors)) {
+                    foreach ($defaultSponsors as $ds) {
+                        $orgId = $ds['organisation_id'] ?? null;
+                        $pct   = (float) ($ds['percentage'] ?? 0);
+                        if ($orgId && $pct > 0) {
+                            CreditGuarantor::create([
+                                'credit_id'             => $credit->id,
+                                'organisation_id'       => $orgId,
+                                'guarantor_type'        => 'organisation',
+                                'guarantor_role'        => 'org_default',
+                                'guaranteed_percentage' => $pct,
+                                'guaranteed_amount'     => round($amount * ($pct / 100.0), 2),
+                                'approval_status'       => 'pending',
+                            ]);
+                            $attachedDefault = true;
+                        }
+                    }
+                }
+
+                if (!$attachedDefault) {
+                    $orgDefaultPct = (float) FinancialRuleService::get('credit_solidaire_org_default_pct', 50.0);
+                    $defaultOrg = Organisation::where('status', 'active')->first();
+                    if ($defaultOrg) {
+                        CreditGuarantor::create([
+                            'credit_id'             => $credit->id,
+                            'organisation_id'       => $defaultOrg->id,
+                            'guarantor_type'        => 'organisation',
+                            'guarantor_role'        => 'org_default',
+                            'guaranteed_percentage' => $orgDefaultPct,
+                            'guaranteed_amount'     => round($amount * ($orgDefaultPct / 100.0), 2),
+                            'approval_status'       => 'pending',
+                        ]);
+                    }
                 }
             }
 
@@ -231,11 +258,12 @@ class CreditWorkflowService
 
         if ($credit->credit_type === 'solidaire') {
             $approvedPeers = $guarantors->where('guarantor_role', 'peer')->where('approval_status', 'approved');
-            $orgDefault = $guarantors->where('guarantor_role', 'org_default')->first();
+            $orgDefaults = $guarantors->where('guarantor_role', 'org_default');
+            $allOrgDefaultsApproved = $orgDefaults->isNotEmpty() && $orgDefaults->every(fn($g) => $g->approval_status === 'approved');
 
             if ($approvedPeers->count() < 3) {
                 $credit->approval_status = 'pending_guarantors';
-            } elseif (!$orgDefault || $orgDefault->approval_status !== 'approved') {
+            } elseif (!$allOrgDefaultsApproved) {
                 $credit->approval_status = 'pending_org';
             } else {
                 $credit->approval_status = 'pending_financier';

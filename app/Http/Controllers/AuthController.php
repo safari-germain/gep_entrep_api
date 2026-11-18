@@ -39,11 +39,21 @@ class AuthController extends Controller
             ]);
 
             // Création du profil individual / membre (branch_id nullable si rôle branch)
+            $sensibilisateurId = $request->input('sensibilisateur_id');
+            $sponsorUserId = null;
+            if ($sensibilisateurId) {
+                $sensib = Sensibilisateur::find($sensibilisateurId);
+                if ($sensib && $sensib->user_id) {
+                    $sponsorUserId = $sensib->user_id;
+                }
+            }
+
             $individual = Individual::create([
                 'user_id' => $user->id,
                 'branch_id' => $branchId,
                 'organisation_id' => $request->input('organisation_id'),
-                'sensibilisateur_id' => $request->input('sensibilisateur_id'),
+                'sponsor_user_id' => $sponsorUserId,
+                'sensibilisateur_id' => $sensibilisateurId,
                 'member_code' => 'MEM-' . str_pad($user->id, 5, '0', STR_PAD_LEFT),
                 'trust_score' => 100.0,
                 'deposit_streak_months' => 0,
